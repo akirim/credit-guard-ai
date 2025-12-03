@@ -18,10 +18,21 @@ function App() {
     try {
       setIsLoading(true);
       setError(null);
+      setPredictionResult(null); // Önceki sonucu temizle
+      
+      // Form validasyonu
+      if (!formData.duration || !formData.credit_amount || !formData.age) {
+        setError('Lütfen tüm alanları doldurun.');
+        setIsLoading(false);
+        return;
+      }
+      
       const result = await apiService.predictRisk(formData);
       setPredictionResult(result);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Tahmin yapılırken bir hata oluştu.');
+      const errorMessage = err.message || err.response?.data?.detail || 'Tahmin yapılırken bir hata oluştu.';
+      setError(errorMessage);
+      setPredictionResult(null); // Hata durumunda sonucu temizle
       console.error('Prediction error:', err);
     } finally {
       setIsLoading(false);
