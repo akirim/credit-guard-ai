@@ -211,13 +211,13 @@ async def get_model_features():
 
 
 @app.get("/sample-data")
-async def get_sample_data(include_target: bool = False):
+async def get_sample_data(include_target: bool = True):
     """
     Veri setinden rastgele bir örnek döndürür.
     Frontend formunu otomatik doldurmak için kullanılabilir.
     
     Args:
-        include_target: True ise, gerçek risk durumunu da döndürür (test için)
+        include_target: True ise, gerçek risk durumunu da döndürür (default: True)
     """
     try:
         # Model eğitilmemişse eğit (lazy loading)

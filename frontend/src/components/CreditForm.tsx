@@ -21,7 +21,9 @@ import {
   HelpCircle,
   Building2,
   Phone,
-  Globe
+  Globe,
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { CreditApplication, apiService, ModelFeaturesResponse } from '../services/api';
 import { 
@@ -29,10 +31,14 @@ import {
   featureLabels, 
   featureDescriptions 
 } from '../utils/translations';
+import { FormSkeleton } from './LoadingSkeleton';
+import toast from 'react-hot-toast';
 
 interface CreditFormProps {
   onSubmit: (data: CreditApplication) => void;
   isLoading?: boolean;
+  onSampleDataLoad?: (actualRiskLabel: string | null) => void;
+  onReset?: () => void;
 }
 
 // Feature ikonları
@@ -71,12 +77,15 @@ const formGroups = {
   },
 };
 
-const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) => {
+const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false, onSampleDataLoad, onReset }) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [modelFeatures, setModelFeatures] = useState<ModelFeaturesResponse | null>(null);
   const [loadingFeatures, setLoadingFeatures] = useState(true);
   const [loadingSample, setLoadingSample] = useState(false);
   const [tooltipField, setTooltipField] = useState<string | null>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [sampleRiskLabel, setSampleRiskLabel] = useState<string | null>(null);
 
   // Model feature'larını yükle
   useEffect(() => {
@@ -121,26 +130,81 @@ const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) 
   }, []);
 
   const handleChange = (field: string, value: string | number) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => {
+      const newData = { ...prev, [field]: value };
+      
+      // Real-time validation
+      validateField(field, value, newData);
+      
+      return newData;
+    });
+  };
+
+  const validateField = (field: string, value: any, allData: Record<string, any>) => {
+    const errors: Record<string, string> = { ...fieldErrors };
+    
+    // Numeric validations
+    if (field === 'age' && (value < 18 || value > 100)) {
+      errors[field] = 'Yaş 18-100 arasında olmalıdır';
+    } else if (field === 'credit_amount' && (value < 0 || value > 20000)) {
+      errors[field] = 'Kredi tutarı 0-20.000 ₺ arasında olmalıdır';
+    } else if (field === 'duration' && (value < 1 || value > 120)) {
+      errors[field] = 'Kredi süresi 1-120 ay arasında olmalıdır';
+    } else {
+      delete errors[field];
+    }
+    
+    setFieldErrors(errors);
+  };
+
+  // Form completion percentage
+  const getFormProgress = () => {
+    if (!modelFeatures) return 0;
+    const totalFields = modelFeatures.numeric_features.length + Object.keys(modelFeatures.categorical_features).length;
+    const filledFields = Object.keys(formData).filter(key => {
+      const value = formData[key];
+      return value !== null && value !== undefined && value !== '';
+    }).length;
+    return Math.round((filledFields / totalFields) * 100);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // API'ye gönderirken orijinal değerleri kullan (zaten formData'da orijinal değerler var)
-    onSubmit(formData as CreditApplication);
+    // Eğer örnek veri yüklendiyse, gerçek risk durumunu da ekle
+    const submitData = { ...formData } as CreditApplication;
+    if (sampleRiskLabel) {
+      submitData.actual_risk_label = sampleRiskLabel;
+    }
+    onSubmit(submitData);
   };
 
   const handleLoadSample = async () => {
     try {
       setLoadingSample(true);
-      const sampleData = await apiService.getSampleData();
-      setFormData(sampleData);
+      const sampleData = await apiService.getSampleData(true);
+      
+      // Gerçek risk durumunu ayır ve form verisinden çıkar
+      const { actual_risk_label, actual_risk, ...formFields } = sampleData;
+      setFormData(formFields);
+      setSampleRiskLabel(actual_risk_label || null);
+      
+      // Parent component'e gerçek risk durumunu bildir
+      if (onSampleDataLoad) {
+        onSampleDataLoad(actual_risk_label || null);
+      }
+      
+      if (actual_risk_label) {
+        toast.success(`Örnek veri yüklendi! (Gerçek Durum: ${actual_risk_label})`, {
+          duration: 4000,
+        });
+      } else {
+        toast.success('Örnek veri yüklendi!');
+      }
     } catch (error) {
       console.error('Örnek veri yükleme hatası:', error);
-      alert('Örnek veri yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
+      toast.error('Örnek veri yüklenirken bir hata oluştu.');
+      setSampleRiskLabel(null);
     } finally {
       setLoadingSample(false);
     }
@@ -157,14 +221,7 @@ const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) 
   };
 
   if (loadingFeatures) {
-    return (
-      <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
-        <div className="flex items-center justify-center py-12">
-          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-4 text-slate-300">Model feature'ları yükleniyor...</span>
-        </div>
-      </div>
-    );
+    return <FormSkeleton />;
   }
 
   if (!modelFeatures) {
@@ -177,22 +234,65 @@ const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) 
     );
   }
 
+  const formProgress = getFormProgress();
+
   return (
-    <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Calculator className="w-6 h-6 text-emerald-500" />
-          <h2 className="text-2xl font-bold text-slate-100">Kredi Başvuru Formu</h2>
+    <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700 hover:shadow-2xl hover:border-slate-600 transition-all duration-300 animate-fade-in">
+      {/* Form Progress Indicator */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-slate-400">Form Tamamlanma</span>
+          <span className="text-sm font-semibold text-emerald-400">{formProgress}%</span>
         </div>
-        <button
-          type="button"
-          onClick={handleLoadSample}
-          disabled={loadingSample || isLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-emerald-500/50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loadingSample ? 'animate-spin' : ''}`} />
-          {loadingSample ? 'Yükleniyor...' : 'Hazır Veri Seç'}
-        </button>
+        <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${formProgress}%` }}
+          ></div>
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Calculator className="w-6 h-6 text-emerald-500" />
+            <div>
+              <h2 className="text-2xl font-bold text-slate-100">Kredi Başvuru Formu</h2>
+              {sampleRiskLabel && (
+                <div className="text-xs text-slate-400 mt-1">
+                  Örnek Veri: <span className={`font-semibold ${sampleRiskLabel === 'Riskli' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {sampleRiskLabel}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Hızlı Erişim Butonları */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleLoadSample}
+            disabled={loadingSample || isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-all text-sm font-medium shadow-lg hover:shadow-emerald-500/50 hover:scale-105 disabled:hover:scale-100"
+          >
+            <Sparkles className={`w-4 h-4 ${loadingSample ? 'animate-spin' : ''}`} />
+            {loadingSample ? 'Yükleniyor...' : 'Hazır Veri Seç'}
+          </button>
+          
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg transition-all text-sm font-medium shadow-lg hover:shadow-slate-500/50 hover:scale-105 disabled:hover:scale-100"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Yeni Analiz
+            </button>
+          )}
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
@@ -249,6 +349,9 @@ const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) 
                           {description}
                         </div>
                       )}
+                      {fieldErrors[feature] && (
+                        <div className="text-xs text-rose-400 mt-1">{fieldErrors[feature]}</div>
+                      )}
                       
                       <div className="flex items-center gap-3">
                         <input
@@ -257,8 +360,12 @@ const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) 
                           max={featureConfig.max}
                           step={featureConfig.step}
                           value={value}
+                          onFocus={() => setFocusedField(feature)}
+                          onBlur={() => setFocusedField(null)}
                           onChange={(e) => handleChange(feature, feature === 'credit_amount' ? parseFloat(e.target.value) : parseInt(e.target.value))}
-                          className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 transition-colors"
+                          className={`flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 transition-all ${
+                            focusedField === feature ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-slate-800' : ''
+                          }`}
                         />
                         <span className="text-sm font-semibold text-emerald-400 min-w-[80px] text-right">
                           {feature === 'credit_amount' 
@@ -304,10 +411,17 @@ const CreditForm: React.FC<CreditFormProps> = ({ onSubmit, isLoading = false }) 
                           {description}
                         </div>
                       )}
+                      {fieldErrors[feature] && (
+                        <div className="text-xs text-rose-400 mt-1">{fieldErrors[feature]}</div>
+                      )}
                       <select
                         value={value}
+                        onFocus={() => setFocusedField(feature)}
+                        onBlur={() => setFocusedField(null)}
                         onChange={(e) => handleChange(feature, e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all hover:border-slate-500"
+                        className={`w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all hover:border-slate-500 ${
+                          focusedField === feature ? 'ring-2 ring-emerald-500 ring-offset-2 ring-offset-slate-800' : ''
+                        }`}
                       >
                         {values.map((val) => (
                           <option key={val} value={val}>

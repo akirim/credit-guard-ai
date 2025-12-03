@@ -324,29 +324,19 @@ def predict_risk(input_data: Dict[str, Any]) -> Dict[str, Any]:
     
     print(f"  -> Tahmin sonucu: risk_proba={risk_proba:.4f}, risk_score={risk_score}")
     
-    # Optimal threshold ile karar ver (eğer set edilmemişse 0.5 kullan)
-    global optimal_threshold
-    threshold = optimal_threshold if optimal_threshold > 0 else 0.5
-    is_risky = risk_proba >= threshold
-    
-    # Karar ve risk seviyesi
-    if is_risky:
-        if risk_score >= 70:
-            decision = "REJECT"
-            risk_level = "High"
-        elif risk_score >= 50:
-            decision = "REJECT"
-            risk_level = "High"
-        else:
-            decision = "REVIEW"
-            risk_level = "Medium"
+    # Risk skoruna göre karar verme (0-100 arası skor)
+    # 0-35: Düşük Risk -> APPROVE
+    # 36-55: Orta Risk -> REVIEW
+    # 56-100: Yüksek Risk -> REJECT
+    if risk_score <= 35:
+        decision = "APPROVE"
+        risk_level = "Low"
+    elif risk_score <= 55:
+        decision = "REVIEW"
+        risk_level = "Medium"
     else:
-        if risk_score >= 40:
-            decision = "REVIEW"
-            risk_level = "Medium"
-        else:
-            decision = "APPROVE"
-            risk_level = "Low"
+        decision = "REJECT"
+        risk_level = "High"
     
     return {
         "risk_score": risk_score,

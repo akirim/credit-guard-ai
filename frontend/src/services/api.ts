@@ -57,6 +57,9 @@ export interface CreditApplication {
   job?: string;
   own_telephone?: string;
   foreign_worker?: string;
+  // Sample data metadata (optional)
+  actual_risk?: string;
+  actual_risk_label?: string;
 }
 
 export interface PredictionResponse {

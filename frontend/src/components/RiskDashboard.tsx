@@ -4,9 +4,11 @@
  */
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, TrendingUp, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, TrendingUp, AlertTriangle, Info } from 'lucide-react';
 import { apiService, ModelPerformanceResponse, PredictionResponse } from '../services/api';
 import { RadialBarChart, RadialBar, ResponsiveContainer } from 'recharts';
+import AnimatedNumber from './AnimatedNumber';
+import { DashboardSkeleton } from './LoadingSkeleton';
 
 interface RiskDashboardProps {
   predictionResult: PredictionResponse | null;
@@ -105,9 +107,9 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
     : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Bölüm A: Analiz Sonucu */}
-      <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
+      <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700 hover:shadow-2xl hover:border-slate-600 transition-all duration-300">
         <h2 className="text-2xl font-bold text-slate-100 mb-6 flex items-center gap-2">
           <TrendingUp className="w-6 h-6 text-emerald-500" />
           Analiz Sonucu
@@ -136,7 +138,7 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
                 </ResponsiveContainer>
                 <div className="text-center mt-4">
                   <div className="text-4xl font-bold" style={{ color: getRiskColor(predictionResult.risk_level) }}>
-                    {predictionResult.risk_score}
+                    <AnimatedNumber value={predictionResult.risk_score} duration={1500} />
                   </div>
                   <div className="text-sm text-slate-400 mt-1">Risk Skoru (0-100)</div>
                 </div>
@@ -145,7 +147,7 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
 
             {/* Karar Kartı */}
             <div
-              className={`p-6 rounded-lg border-2 ${getDecisionDisplay(predictionResult.decision).bgColor} ${getDecisionDisplay(predictionResult.decision).borderColor}`}
+              className={`p-6 rounded-lg border-2 transition-all duration-300 hover:scale-[1.02] ${getDecisionDisplay(predictionResult.decision).bgColor} ${getDecisionDisplay(predictionResult.decision).borderColor}`}
             >
               <div className="flex items-center justify-center gap-4">
                 {getDecisionDisplay(predictionResult.decision).icon}
@@ -169,17 +171,14 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
       </div>
 
       {/* Bölüm B: Model Güvenilirliği */}
-      <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700">
+      <div className="bg-slate-800 rounded-lg p-6 shadow-xl border border-slate-700 hover:shadow-2xl hover:border-slate-600 transition-all duration-300">
         <h2 className="text-2xl font-bold text-slate-100 mb-6 flex items-center gap-2">
           <TrendingUp className="w-6 h-6 text-emerald-500" />
           Model Güvenilirliği
         </h2>
 
         {loading ? (
-          <div className="text-center py-12">
-            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-slate-400">Model performans verileri yükleniyor...</p>
-          </div>
+          <DashboardSkeleton />
         ) : error ? (
           <div className="text-center py-12 text-rose-500">
             <XCircle className="w-12 h-12 mx-auto mb-4" />
@@ -189,55 +188,67 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
           <div className="space-y-6">
             {/* Metrik Kartları */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                <div className="text-sm text-slate-400 mb-1">Doğruluk</div>
-                <div className="text-2xl font-bold text-emerald-500">
-                  {(modelPerformance.metrics.accuracy * 100).toFixed(1)}%
+              {[
+                { key: 'accuracy', label: 'Doğruluk', color: '#22c55e', value: modelPerformance.metrics.accuracy },
+                { key: 'precision', label: 'Keskinlik', color: '#3b82f6', value: modelPerformance.metrics.precision },
+                { key: 'recall', label: 'Duyarlılık', color: '#f59e0b', value: modelPerformance.metrics.recall },
+                { key: 'f1', label: 'F1 Skoru', color: '#a855f7', value: modelPerformance.metrics.f1 },
+              ].map((metric) => (
+                <div 
+                  key={metric.key}
+                  className="bg-slate-700/50 rounded-lg p-4 border border-slate-600 hover:border-slate-500 hover:bg-slate-700/70 transition-all duration-300 hover:scale-105"
+                >
+                  <div className="text-sm text-slate-400 mb-2">{metric.label}</div>
+                  <div className="text-2xl font-bold mb-2" style={{ color: metric.color }}>
+                    <AnimatedNumber value={metric.value * 100} duration={1500} decimals={1} suffix="%" />
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="w-full bg-slate-600 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-1000 ease-out"
+                      style={{ width: `${metric.value * 100}%`, backgroundColor: metric.color }}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-2 capitalize">{metric.key}</div>
                 </div>
-                <div className="text-xs text-slate-500 mt-1">Accuracy</div>
-              </div>
-              <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                <div className="text-sm text-slate-400 mb-1">Keskinlik</div>
-                <div className="text-2xl font-bold text-blue-500">
-                  {(modelPerformance.metrics.precision * 100).toFixed(1)}%
-                </div>
-                <div className="text-xs text-slate-500 mt-1">Precision</div>
-              </div>
-              <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                <div className="text-sm text-slate-400 mb-1">Duyarlılık</div>
-                <div className="text-2xl font-bold text-amber-500">
-                  {(modelPerformance.metrics.recall * 100).toFixed(1)}%
-                </div>
-                <div className="text-xs text-slate-500 mt-1">Recall</div>
-              </div>
-              <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                <div className="text-sm text-slate-400 mb-1">F1 Skoru</div>
-                <div className="text-2xl font-bold text-purple-500">
-                  {(modelPerformance.metrics.f1 * 100).toFixed(1)}%
-                </div>
-                <div className="text-xs text-slate-500 mt-1">F1 Score</div>
-              </div>
+              ))}
             </div>
 
             {/* Karışıklık Matrisi */}
             <div>
-              <h3 className="text-lg font-semibold text-slate-200 mb-4">Karışıklık Matrisi</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="text-lg font-semibold text-slate-200">Karışıklık Matrisi</h3>
+                <div className="group relative">
+                  <Info className="w-4 h-4 text-slate-400 hover:text-emerald-400 cursor-help transition-colors" />
+                  <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-10 w-64 p-3 bg-slate-900 text-xs text-slate-200 rounded-lg shadow-lg border border-slate-700">
+                    <p className="mb-2"><strong>TN (True Negative):</strong> Güvenli müşteriyi doğru onayladık</p>
+                    <p className="mb-2"><strong>TP (True Positive):</strong> Riskli müşteriyi doğru reddettik</p>
+                    <p className="mb-2"><strong>FP (False Positive):</strong> Güvenli müşteriyi yanlış reddettik</p>
+                    <p><strong>FN (False Negative):</strong> Riskli müşteriyi kaçırdık (En tehlikeli)</p>
+                  </div>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2 max-w-md mx-auto">
                 {modelPerformance.confusion_matrix.map((row, rowIndex) =>
-                  row.map((value, colIndex) => (
-                    <div
-                      key={`${rowIndex}-${colIndex}`}
-                      className={`p-4 rounded-lg border-2 text-center ${getConfusionMatrixColor(rowIndex, colIndex, value)}`}
-                    >
-                      <div className="text-2xl font-bold text-slate-100">{value}</div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        {rowIndex === 0 && colIndex === 0 && 'TN (Doğru Onay)'}
-                        {rowIndex === 0 && colIndex === 1 && 'FP (Yanlış Alarm)'}
-                        {rowIndex === 1 && colIndex === 0 && 'FN (Kaçan Risk)'}
-                        {rowIndex === 1 && colIndex === 1 && 'TP (Doğru Red)'}
+                  row.map((value, colIndex) => {
+                    const labels = [
+                      ['TN (Doğru Onay)', 'FP (Yanlış Alarm)'],
+                      ['FN (Kaçan Risk)', 'TP (Doğru Red)']
+                    ];
+                    return (
+                      <div
+                        key={`${rowIndex}-${colIndex}`}
+                        className={`p-4 rounded-lg border-2 text-center transition-all duration-300 hover:scale-105 hover:shadow-lg ${getConfusionMatrixColor(rowIndex, colIndex, value)}`}
+                      >
+                        <div className="text-2xl font-bold text-slate-100">
+                          <AnimatedNumber value={value} duration={1000} />
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          {labels[rowIndex][colIndex]}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               <div className="mt-4 text-center text-sm text-slate-400">
