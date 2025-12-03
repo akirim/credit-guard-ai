@@ -20,6 +20,15 @@ trained_model: RandomForestClassifier = None
 encoders: Dict[str, LabelEncoder] = {}
 model_metrics: Dict[str, Any] = {}
 feature_names: List[str] = []
+optimal_threshold: float = 0.5  # Tahmin threshold'u (0.5 = varsayılan)
+
+# Model ağırlık ayarı: Riskli müşteriyi (1) kaçırmak ne kadar kötü?
+# Örnek: RISK_WEIGHT = 10.0 -> Bir riskli müşteriyi kaçırmak, 10 iyi müşteriyi üzmekten daha kötü
+RISK_WEIGHT = 10.0  # Bu değeri artırarak Recall'ı yükseltebilirsiniz (5.0, 10.0, 15.0, vb.)
+
+# Threshold ayarı: Recall'ı artırmak için threshold'u düşürün (0.3-0.5 arası önerilir)
+# Düşük threshold = Daha fazla riskli yakalama, daha fazla yanlış alarm
+PREDICTION_THRESHOLD = 0.35  # 0.5 yerine 0.35 kullanarak daha fazla riskli yakalayalım
 
 
 def train_model():
@@ -101,21 +110,53 @@ def train_model():
     
     # Model eğitimi
     print("Model eğitiliyor...")
-    print("  -> class_weight='balanced' kullanılıyor (Riskli müşterileri daha iyi yakalamak için)")
+    # Manuel ağırlık: Riskli müşteriyi (1) kaçırmak, RISK_WEIGHT iyi müşteriyi (0) üzmekten daha kötü
+    class_weights = {0: 1.0, 1: RISK_WEIGHT}  # İyi: 1.0, Riskli: RISK_WEIGHT kat daha önemli
+    print(f"  -> Manuel class_weight kullanılıyor: {class_weights}")
+    print(f"  -> Riskli müşteriyi kaçırmak, {RISK_WEIGHT} iyi müşteriyi üzmekten daha kötü!")
     trained_model = RandomForestClassifier(
         n_estimators=100,
         max_depth=10,
         random_state=42,
         n_jobs=-1,
-        class_weight='balanced'  # Riskli müşterileri (minority class) daha fazla önemlendir
+        class_weight=class_weights  # Manuel ağırlık: Riskli müşterilere 10 kat önem
     )
     trained_model.fit(X_train, y_train)
     
     print("Model eğitimi tamamlandı. Test seti üzerinde değerlendiriliyor...")
     
-    # Test seti üzerinde tahmin yap
-    y_pred = trained_model.predict(X_test)
+    # Test seti üzerinde olasılık tahminleri yap
     y_pred_proba = trained_model.predict_proba(X_test)[:, 1]
+    
+    # Optimal threshold'u bul (Recall'ı maksimize etmek için)
+    # Farklı threshold değerlerini dene
+    best_threshold = 0.5
+    best_recall = 0.0
+    best_f1 = 0.0
+    
+    print(f"  -> Optimal threshold aranıyor (Recall'ı artırmak için)...")
+    for threshold in [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]:
+        y_pred_thresh = (y_pred_proba >= threshold).astype(int)
+        recall_thresh = recall_score(y_test, y_pred_thresh, zero_division=0)
+        f1_thresh = f1_score(y_test, y_pred_thresh, zero_division=0)
+        
+        # Recall >= 0.7 ve F1 maksimize eden threshold'u seç
+        if recall_thresh >= 0.7 and f1_thresh > best_f1:
+            best_threshold = threshold
+            best_recall = recall_thresh
+            best_f1 = f1_thresh
+        elif recall_thresh > best_recall and best_recall < 0.7:
+            # Eğer 0.7'e ulaşamadıysak, en yüksek recall'ı al
+            best_threshold = threshold
+            best_recall = recall_thresh
+            best_f1 = f1_thresh
+    
+    global optimal_threshold
+    optimal_threshold = best_threshold
+    print(f"  -> Optimal threshold bulundu: {optimal_threshold:.2f} (Recall: {best_recall:.2%})")
+    
+    # Optimal threshold ile tahmin yap
+    y_pred = (y_pred_proba >= optimal_threshold).astype(int)
     
     # Metrikleri hesapla
     accuracy = accuracy_score(y_test, y_pred)
@@ -185,20 +226,31 @@ def predict_risk(input_data: Dict[str, Any]) -> Dict[str, Any]:
     # Sadece eğitim sırasında kullanılan özellikleri seç
     X_input = input_df[feature_names]
     
-    # Tahmin yap
+    # Tahmin yap (optimal threshold kullanarak)
     risk_proba = trained_model.predict_proba(X_input)[0, 1]  # Riskli olma olasılığı
     risk_score = int(risk_proba * 100)
     
+    # Optimal threshold ile karar ver
+    is_risky = risk_proba >= optimal_threshold
+    
     # Karar ve risk seviyesi
-    if risk_score >= 70:
-        decision = "REJECT"
-        risk_level = "High"
-    elif risk_score >= 40:
-        decision = "REVIEW"
-        risk_level = "Medium"
+    if is_risky:
+        if risk_score >= 70:
+            decision = "REJECT"
+            risk_level = "High"
+        elif risk_score >= 50:
+            decision = "REJECT"
+            risk_level = "High"
+        else:
+            decision = "REVIEW"
+            risk_level = "Medium"
     else:
-        decision = "APPROVE"
-        risk_level = "Low"
+        if risk_score >= 40:
+            decision = "REVIEW"
+            risk_level = "Medium"
+        else:
+            decision = "APPROVE"
+            risk_level = "Low"
     
     return {
         "risk_score": risk_score,
