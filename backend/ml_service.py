@@ -15,6 +15,22 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
+
+def create_domain_features(df):
+    """
+    Bankacılık alan bilgisi ile özellik mühendisliği yapar.
+    Ödeme gücünü belirleyen oranları hesaplar.
+    """
+    df_new = df.copy()
+    # Aylık Ödeme Yükü: Kredi Tutarı / Vade
+    if 'credit_amount' in df_new.columns and 'duration' in df_new.columns:
+        df_new['payment_per_month'] = df_new['credit_amount'] / df_new['duration']
+    # Yaş/Kredi Oranı: Kredi Tutarı / Yaş
+    if 'credit_amount' in df_new.columns and 'age' in df_new.columns:
+        df_new['credit_age_ratio'] = df_new['credit_amount'] / df_new['age']
+    return df_new
+
+
 # Global değişkenler
 trained_model: RandomForestClassifier = None
 encoders: Dict[str, LabelEncoder] = {}
@@ -75,6 +91,9 @@ def train_model():
     
     df = data.frame
     
+    # Alan bilgisi ile özellik mühendisliği uygula
+    df = create_domain_features(df)
+    
     # Orijinal veri setini global olarak sakla (örnek veri için)
     original_dataset = df.copy()
     
@@ -127,11 +146,12 @@ def train_model():
     print(f"  -> Manuel class_weight kullanılıyor: {class_weights}")
     print(f"  -> Riskli müşteriyi kaçırmak, {RISK_WEIGHT} iyi müşteriyi üzmekten daha kötü!")
     trained_model = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
+        n_estimators=200,      # Stabilite için artırıldı
+        max_depth=None,        # Derinliği serbest bırak (karmaşık riskleri yakalasın)
+        min_samples_leaf=2,    # Ezberlemeyi (overfitting) önlemek için yaprak başına min 2 örnek
         random_state=42,
         n_jobs=-1,
-        class_weight=class_weights  # Manuel ağırlık: Riskli müşterilere 10 kat önem
+        class_weight=class_weights
     )
     trained_model.fit(X_train, y_train)
     
@@ -140,32 +160,44 @@ def train_model():
     # Test seti üzerinde olasılık tahminleri yap
     y_pred_proba = trained_model.predict_proba(X_test)[:, 1]
     
-    # Optimal threshold'u bul (Recall'ı maksimize etmek için)
-    # Farklı threshold değerlerini dene
-    best_threshold = 0.5
+    # --- YENİ AGRESİF THRESHOLD AYARI ---
+    print(f"   -> Optimal threshold aranıyor (Hedef Recall >= %80)...")
+    
+    best_threshold = 0.20 
+    best_score_f1 = -1.0
+    target_min_recall = 0.80
+    found_target_recall = False
     best_recall = 0.0
-    best_f1 = 0.0
-    
-    print(f"  -> Optimal threshold aranıyor (Recall'ı artırmak için)...")
-    for threshold in [0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]:
+
+    # Daha hassas arama yap
+    thresholds_to_test = np.arange(0.1, 0.61, 0.02)
+
+    for threshold in thresholds_to_test:
         y_pred_thresh = (y_pred_proba >= threshold).astype(int)
-        recall_thresh = recall_score(y_test, y_pred_thresh, zero_division=0)
-        f1_thresh = f1_score(y_test, y_pred_thresh, zero_division=0)
+        recall_val = recall_score(y_test, y_pred_thresh, zero_division=0)
+        f1_val = f1_score(y_test, y_pred_thresh, zero_division=0)
         
-        # Recall >= 0.7 ve F1 maksimize eden threshold'u seç
-        if recall_thresh >= 0.7 and f1_thresh > best_f1:
-            best_threshold = threshold
-            best_recall = recall_thresh
-            best_f1 = f1_thresh
-        elif recall_thresh > best_recall and best_recall < 0.7:
-            # Eğer 0.7'e ulaşamadıysak, en yüksek recall'ı al
-            best_threshold = threshold
-            best_recall = recall_thresh
-            best_f1 = f1_thresh
-    
+        # Öncelik 1: Hedef Recall'a ulaşmak. Öncelik 2: F1'i maksimize etmek.
+        if recall_val >= target_min_recall:
+            found_target_recall = True
+            if f1_val > best_score_f1:
+                best_score_f1 = f1_val
+                best_threshold = threshold
+                best_recall = recall_val
+        # Hedefe henüz ulaşamadıysak, en iyi F1'i yine de takip et
+        elif not found_target_recall and f1_val > best_score_f1:
+             best_score_f1 = f1_val
+             best_threshold = threshold
+             best_recall = recall_val
+
+    if not found_target_recall:
+         print(f"   -> UYARI: %80 Recall hedefine ulaşılamadı. Güvenli (düşük) threshold seçiliyor.")
+         best_threshold = 0.25 # Manuel güvenli liman
+
     global optimal_threshold
     optimal_threshold = best_threshold
     print(f"  -> Optimal threshold bulundu: {optimal_threshold:.2f} (Recall: {best_recall:.2%})")
+    # --- THRESHOLD SONU ---
     
     # Optimal threshold ile tahmin yap
     y_pred = (y_pred_proba >= optimal_threshold).astype(int)
@@ -216,6 +248,9 @@ def predict_risk(input_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Giriş verisini DataFrame'e çevir
     input_df = pd.DataFrame([input_data])
+    
+    # Alan bilgisi ile özellik mühendisliği uygula
+    input_df = create_domain_features(input_df)
     
     # Debug: Gelen veriyi logla
     print(f"  -> Tahmin için gelen veri: {input_data}")
