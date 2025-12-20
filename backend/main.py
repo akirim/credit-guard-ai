@@ -18,7 +18,7 @@ app = FastAPI(
 # CORS ayarları (Frontend ile iletişim için)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],  # Vite default port
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"],  # Vite default port ve alternatif portlar
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
