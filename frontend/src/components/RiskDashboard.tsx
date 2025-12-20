@@ -141,6 +141,14 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
                     <AnimatedNumber value={predictionResult.risk_score} duration={1500} />
                   </div>
                   <div className="text-sm text-slate-400 mt-1">Risk Skoru (0-100)</div>
+                  {predictionResult.explanation && (
+                    <div className="mt-3 px-4 py-2 bg-slate-700/50 rounded-lg border border-slate-600">
+                      <div className="text-xs text-slate-400 mb-1">Sebep:</div>
+                      <div className="text-sm text-slate-300">
+                        {predictionResult.explanation}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -156,8 +164,13 @@ const RiskDashboard: React.FC<RiskDashboardProps> = ({ predictionResult }) => {
                     {getDecisionDisplay(predictionResult.decision).text}
                   </div>
                   <div className="text-sm text-slate-400 mt-1">
-                    Risk Seviyesi: {predictionResult.risk_level}
+                    Risk Seviyesi: {predictionResult.risk_level === 'Low' ? 'Düşük' : predictionResult.risk_level === 'Medium' ? 'Orta' : 'Yüksek'}
                   </div>
+                  {predictionResult.explanation && (
+                    <div className="text-xs text-slate-500 mt-2 px-2">
+                      {predictionResult.explanation}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

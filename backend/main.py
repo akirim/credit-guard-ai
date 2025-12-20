@@ -75,6 +75,7 @@ class PredictionResponse(BaseModel):
     decision: str
     risk_level: str
     risk_probability: float
+    explanation: str
 
 
 class ModelPerformanceResponse(BaseModel):

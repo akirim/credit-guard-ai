@@ -231,6 +231,183 @@ def train_model():
     return model_metrics
 
 
+def generate_risk_explanation(
+    model: RandomForestClassifier,
+    feature_names: List[str],
+    X_input_row: pd.Series,
+    original_input_data: Dict[str, Any],
+    input_df_with_features: pd.DataFrame,
+    encoders: Dict[str, LabelEncoder],
+    risk_score: int
+) -> str:
+    """
+    Feature importance kullanarak risk skoru için açıklama oluşturur.
+    
+    Args:
+        model: Eğitilmiş RandomForest modeli
+        feature_names: Feature isimleri listesi
+        X_input_row: Model'e gönderilen encode edilmiş veri (pandas Series)
+        original_input_data: Orijinal giriş verisi (decode edilmemiş)
+        input_df_with_features: create_domain_features uygulanmış DataFrame
+        encoders: Label encoder'lar
+        risk_score: Hesaplanan risk skoru
+        
+    Returns:
+        Türkçe risk açıklaması
+    """
+    # Feature importance'ları al
+    feature_importances = model.feature_importances_
+    
+    # Feature isimleri ile importance'ları eşleştir ve sırala
+    feature_importance_dict = dict(zip(feature_names, feature_importances))
+    sorted_features = sorted(feature_importance_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    # En önemli 3-5 feature'ı seç (toplam importance'ın %60'ını kapsayan)
+    top_features = []
+    cumulative_importance = 0.0
+    target_importance = 0.6  # Toplam importance'ın %60'ı
+    
+    for feature_name, importance in sorted_features:
+        if cumulative_importance < target_importance and len(top_features) < 5:
+            top_features.append((feature_name, importance))
+            cumulative_importance += importance
+        else:
+            break
+    
+    # Feature Türkçe isimleri mapping
+    feature_turkish_names = {
+        'payment_per_month': 'Aylık Ödeme Yükü',
+        'credit_age_ratio': 'Yaş/Kredi Oranı',
+        'checking_status': 'Hesap Durumu',
+        'savings_status': 'Tasarruf Durumu',
+        'credit_history': 'Kredi Geçmişi',
+        'credit_amount': 'Kredi Tutarı',
+        'duration': 'Kredi Süresi',
+        'age': 'Yaş',
+        'employment': 'İstihdam Durumu',
+        'purpose': 'Kredi Amacı',
+        'housing': 'Konut Durumu',
+        'installment_commitment': 'Taksit Taahhüdü',
+        'personal_status': 'Kişisel Durum',
+        'other_parties': 'Diğer Taraflar',
+        'residence_since': 'İkamet Süresi',
+        'property_magnitude': 'Mülkiyet Büyüklüğü',
+        'other_payment_plans': 'Diğer Ödeme Planları',
+        'existing_credits': 'Mevcut Krediler',
+        'job': 'Meslek',
+        'num_dependents': 'Bağımlı Sayısı',
+        'own_telephone': 'Telefon Sahipliği',
+        'foreign_worker': 'Yabancı İşçi',
+    }
+    
+    # Risk açıklamaları oluştur
+    explanations = []
+    
+    for feature_name, importance in top_features:
+        turkish_name = feature_turkish_names.get(feature_name, feature_name)
+        
+        # Önce create_domain_features ile oluşturulan feature'ları kontrol et
+        original_value = None
+        if feature_name in input_df_with_features.columns:
+            original_value = input_df_with_features[feature_name].iloc[0]
+        elif feature_name in original_input_data:
+            original_value = original_input_data[feature_name]
+        else:
+            # Encoded değeri decode etmeye çalış
+            if feature_name in X_input_row.index:
+                encoded_value = X_input_row[feature_name]
+                # Decode etmeye çalış
+                if feature_name in encoders:
+                    try:
+                        # Encoder'dan geri çevir
+                        original_value = encoders[feature_name].inverse_transform([int(encoded_value)])[0]
+                    except:
+                        original_value = None
+                else:
+                    # Numeric feature
+                    original_value = encoded_value
+        
+        if original_value is None:
+            continue
+        
+        # Feature'a göre risk açıklaması oluştur
+        risk_reason = None
+        
+        # Numeric feature'lar için
+        if feature_name == 'payment_per_month':
+            # Aylık ödeme yükü yüksekse riskli
+            if isinstance(original_value, (int, float)):
+                if original_value > 500:  # Yüksek aylık ödeme
+                    risk_reason = f"{turkish_name} fazla"
+                elif original_value > 300:
+                    risk_reason = f"{turkish_name} orta seviyede"
+        
+        elif feature_name == 'credit_amount':
+            if isinstance(original_value, (int, float)):
+                if original_value > 10000:  # Yüksek kredi tutarı
+                    risk_reason = f"{turkish_name} yüksek"
+        
+        elif feature_name == 'credit_age_ratio':
+            if isinstance(original_value, (int, float)):
+                if original_value > 200:  # Yaşa göre yüksek kredi
+                    risk_reason = f"{turkish_name} dengesiz"
+        
+        elif feature_name == 'age':
+            if isinstance(original_value, (int, float)):
+                if original_value < 25 or original_value > 65:  # Genç veya yaşlı
+                    risk_reason = f"{turkish_name} riskli aralıkta"
+        
+        # Kategorik feature'lar için
+        elif feature_name == 'checking_status':
+            risk_values = ['<0', 'no checking']  # Negatif bakiye veya hesap yok
+            if str(original_value) in risk_values:
+                risk_reason = f"{turkish_name} zayıf"
+            elif str(original_value) == '0<=X<200':
+                risk_reason = f"{turkish_name} düşük"
+        
+        elif feature_name == 'savings_status':
+            risk_values = ['<100', 'no known savings']  # Düşük tasarruf
+            if str(original_value) in risk_values:
+                risk_reason = f"{turkish_name} yetersiz"
+        
+        elif feature_name == 'credit_history':
+            risk_values = ['delayed previously', 'critical/other existing credit']  # Kötü geçmiş
+            if str(original_value) in risk_values:
+                risk_reason = f"{turkish_name} sorunlu"
+        
+        elif feature_name == 'employment':
+            risk_values = ['unemployed', '<1']  # İşsiz veya kısa süreli
+            if str(original_value) in risk_values:
+                risk_reason = f"{turkish_name} belirsiz"
+        
+        elif feature_name == 'housing':
+            if str(original_value) == 'rent':  # Kirada oturuyor
+                risk_reason = f"{turkish_name} kirada"
+        
+        elif feature_name == 'existing_credits':
+            if isinstance(original_value, (int, float)):
+                if original_value >= 3:  # Çok fazla mevcut kredi
+                    risk_reason = f"{turkish_name} fazla"
+        
+        # Eğer özel bir risk nedeni bulunamadıysa, genel bir açıklama yap
+        if risk_reason is None:
+            # Feature importance'a göre genel açıklama
+            if importance > 0.1:  # Çok önemli feature
+                risk_reason = f"{turkish_name} önemli faktör"
+            else:
+                risk_reason = f"{turkish_name} etkili"
+        
+        explanations.append(risk_reason)
+    
+    # Açıklamaları birleştir
+    if explanations:
+        explanation_text = ", ".join(explanations[:3])  # En fazla 3 açıklama
+    else:
+        explanation_text = "Genel risk faktörleri"
+    
+    return explanation_text
+
+
 def predict_risk(input_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Yeni bir kredi başvurusu için risk skoru hesaplar.
@@ -373,11 +550,23 @@ def predict_risk(input_data: Dict[str, Any]) -> Dict[str, Any]:
         decision = "REJECT"
         risk_level = "High"
     
+    # Feature importance analizi ile açıklama oluştur
+    explanation = generate_risk_explanation(
+        trained_model, 
+        feature_names, 
+        X_input.iloc[0], 
+        input_data, 
+        input_df,  # create_domain_features uygulanmış DataFrame
+        encoders,
+        risk_score
+    )
+    
     return {
         "risk_score": risk_score,
         "decision": decision,
         "risk_level": risk_level,
-        "risk_probability": float(risk_proba)
+        "risk_probability": float(risk_proba),
+        "explanation": explanation
     }
 
 

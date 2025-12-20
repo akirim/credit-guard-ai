@@ -114,6 +114,11 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ predictionResult, actualRiskL
               }}
             ></div>
           </div>
+          {predictionResult.explanation && (
+            <div className="mt-2 text-xs text-slate-400 line-clamp-2">
+              {predictionResult.explanation}
+            </div>
+          )}
         </div>
 
         {/* Karar Durumu Kartı */}
@@ -193,6 +198,14 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ predictionResult, actualRiskL
                     ? 'Orta risk seviyesi' 
                     : 'Yüksek risk seviyesi'}
                 </div>
+                {predictionResult.explanation && (
+                  <div className="mt-3 px-4 py-2 bg-slate-700/50 rounded-lg border border-slate-600">
+                    <div className="text-xs text-slate-400 mb-1">Sebep:</div>
+                    <div className="text-sm text-slate-300">
+                      {predictionResult.explanation}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -274,7 +287,7 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ predictionResult, actualRiskL
           </table>
         </div>
         <div className="mt-4 p-3 bg-slate-800/50 rounded-lg border border-slate-600">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-slate-300">Mevcut Risk Skorunuz:</span>
             <span className={`text-lg font-bold ${
               predictionResult.risk_score <= 30 
@@ -286,6 +299,14 @@ const AnalysisTab: React.FC<AnalysisTabProps> = ({ predictionResult, actualRiskL
               {predictionResult.risk_score} → {predictionResult.decision}
             </span>
           </div>
+          {predictionResult.explanation && (
+            <div className="mt-2 pt-2 border-t border-slate-600">
+              <div className="text-xs text-slate-400 mb-1">Sebep:</div>
+              <div className="text-sm text-slate-300">
+                {predictionResult.explanation}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

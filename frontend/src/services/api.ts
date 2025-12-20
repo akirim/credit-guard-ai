@@ -67,6 +67,7 @@ export interface PredictionResponse {
   decision: string;
   risk_level: string;
   risk_probability: number;
+  explanation: string;
 }
 
 export interface ModelMetrics {
